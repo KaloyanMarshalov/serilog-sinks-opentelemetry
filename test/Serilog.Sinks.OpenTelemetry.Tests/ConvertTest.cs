@@ -48,7 +48,7 @@ public class ConvertTest
         var logRecord = new LogRecord();
         var logEvent = TestUtils.CreateLogEvent();
 
-        Convert.ProcessLevel(logRecord, logEvent);
+        Convert.ProcessSeverity(logRecord, logEvent);
 
         Assert.Equal(LogEventLevel.Warning.ToString(), logRecord.SeverityText);
         Assert.Equal(SeverityNumber.Warn, logRecord.SeverityNumber);

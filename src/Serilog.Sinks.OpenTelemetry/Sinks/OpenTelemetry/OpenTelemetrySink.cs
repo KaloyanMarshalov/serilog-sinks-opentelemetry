@@ -79,10 +79,6 @@ public class OpenTelemetrySink : IBatchedLogEventSink, ILogEventSink, IDisposabl
     {
         switch (protocol)
         {
-            case OtlpProtocol.HttpProtobuf:
-                _exporter = new HttpExporter(endpoint, headers);
-                break;
-
             default:
                 _exporter = new GrpcExporter(endpoint, headers);
                 break;

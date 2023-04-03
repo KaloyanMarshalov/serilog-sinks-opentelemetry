@@ -22,9 +22,6 @@ namespace Serilog.Sinks.OpenTelemetry;
 
 internal static class Convert
 {
-    internal static string MESSAGE_TEMPLATE = "serilog.message.template";
-    internal static string MESSAGE_TEMPLATE_HASH = "serilog.message.template_hash";
-
     internal static string SCHEMA_URL = "https://opentelemetry.io/schemas/v1.13.0";
 
     internal static RepeatedField<KeyValue> ToResourceAttributes(IDictionary<string, Object>? resourceAttributes)
@@ -50,46 +47,57 @@ internal static class Convert
     internal static LogRecord ToLogRecord(LogEvent logEvent, string? renderedMessage)
     {
         var logRecord = new LogRecord();
-
-        ProcessProperties(logRecord, logEvent);
-        ProcessTimestamp(logRecord, logEvent);
-        ProcessMessage(logRecord, renderedMessage);
-        ProcessLevel(logRecord, logEvent);
+        ProcessTimestamps(logRecord, logEvent);
+        ProcessSeverity(logRecord, logEvent);
+        ProcessBody(logRecord, logEvent, renderedMessage);
+        // Perhaps a bulk "ProcessAttributes" instead?
         ProcessException(logRecord, logEvent);
 
         return logRecord;
     }
-
-    internal static void ProcessMessage(LogRecord logRecord, string? renderedMessage)
+    
+    internal static void ProcessTimestamps(LogRecord logRecord, LogEvent logEvent)
     {
-        if (renderedMessage != null && renderedMessage.Trim() != "")
-        {
-            logRecord.Body = new AnyValue()
-            {
-                StringValue = renderedMessage
-            };
-        }
+        logRecord.TimeUnixNano = ConvertUtils.ToUnixNano(logEvent.Timestamp);
+        // Set the ObservedTimestamp as this is technically already part of the OTEL pipeline
+        // We can have a discussion on leaving that to the collector instead?
+        logRecord.ObservedTimeUnixNano = ConvertUtils.ToUnixNano(DateTimeOffset.Now);
     }
-
-    internal static void ProcessLevel(LogRecord logRecord, LogEvent logEvent)
+    
+    internal static void ProcessSeverity(LogRecord logRecord, LogEvent logEvent)
     {
         var level = logEvent.Level;
         logRecord.SeverityText = level.ToString();
         logRecord.SeverityNumber = ConvertUtils.ToSeverityNumber(level);
     }
 
-    internal static void ProcessProperties(LogRecord logRecord, LogEvent logEvent)
+    // According to the OTEL Data model, Body is of type "any", however, for Elasticsearch indexing purposes we need to 
+    // be more specific and define it as a map <string, any> instead.
+    // The Body field has 2 fields according to our spec - "message" and "properties"
+    // "message" is a string - the log message that was written by the caller
+    // "properties" is a map<string, any> - used for structured logging to populate additional fields
+    internal static void ProcessBody(LogRecord logRecord, LogEvent logEvent, string? renderedMessage)
     {
-        var properties = logEvent.Properties;
-        var attrs = logRecord.Attributes;
-        foreach (var property in properties)
+        var logBody = new KeyValueList();
+        if (renderedMessage != null && renderedMessage.Trim() != "")
         {
-            var key = property.Key;
-            var value = property.Value;
-            switch (key)
+            logBody.Values.Add(new KeyValue()
+            {
+                // TODO: Make this a constant somewhere reasonable
+                Key = "message",
+                Value = new AnyValue{StringValue = renderedMessage}
+            });
+        }
+
+        var logBodyProperties = new KeyValueList();
+        foreach (var property in logEvent.Properties)
+        {
+            // TraceId and SpanId are not separated out in the Serilog LogEvent, they're bundled in with other properties.
+            // We need to check for them and if we find them, write them in the OpenTelemetry LogRecord in the corresponding field
+            switch (property.Key)
             {
                 case TraceIdEnricher.TRACE_ID_PROPERTY_NAME:
-                    var traceId = ConvertUtils.ToOpenTelemetryTraceId(value.ToString());
+                    var traceId = ConvertUtils.ToOpenTelemetryTraceId(property.Value.ToString());
                     if (traceId != null)
                     {
                         logRecord.TraceId = traceId;
@@ -97,7 +105,7 @@ internal static class Convert
                     break;
 
                 case TraceIdEnricher.SPAN_ID_PROPERTY_NAME:
-                    var spanId = ConvertUtils.ToOpenTelemetrySpanId(value.ToString());
+                    var spanId = ConvertUtils.ToOpenTelemetrySpanId(property.Value.ToString());
                     if (spanId != null)
                     {
                         logRecord.SpanId = spanId;
@@ -105,19 +113,23 @@ internal static class Convert
                     break;
 
                 default:
-                    var v = ConvertUtils.ToOpenTelemetryAnyValue(value);
-                    if (v != null)
+                    var value = ConvertUtils.ToOpenTelemetryAnyValue(property.Value);
+                    if (value != null)
                     {
-                        attrs.Add(ConvertUtils.NewAttribute(key, v));
+                        logBodyProperties.Values.Add(new KeyValue()
+                        {
+                            Key = property.Key,
+                            Value = value
+                        });
                     }
                     break;
             }
         }
-    }
 
-    internal static void ProcessTimestamp(LogRecord logRecord, LogEvent logEvent)
-    {
-        logRecord.TimeUnixNano = ConvertUtils.ToUnixNano(logEvent.Timestamp);
+        logRecord.Body = new AnyValue()
+        {
+            KvlistValue = logBody
+        };
     }
 
     internal static void ProcessException(LogRecord logRecord, LogEvent logEvent)
