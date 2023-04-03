@@ -126,6 +126,13 @@ internal static class Convert
             }
         }
 
+        logBody.Values.Add(new KeyValue()
+        {
+            // TODO: Make this a constant somewhere reasonable
+            Key = "properties",
+            Value = new AnyValue{KvlistValue = logBodyProperties}
+        });
+        
         logRecord.Body = new AnyValue()
         {
             KvlistValue = logBody
