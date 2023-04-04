@@ -13,6 +13,8 @@
 // limitations under the License.
 
 using Google.Protobuf.Collections;
+using JsonFlatten;
+using Newtonsoft.Json.Linq;
 using OpenTelemetry.Proto.Common.V1;
 using OpenTelemetry.Proto.Logs.V1;
 using OpenTelemetry.Trace;
@@ -113,15 +115,27 @@ internal static class Convert
                     break;
 
                 default:
-                    var value = ConvertUtils.ToOpenTelemetryAnyValue(property.Value);
-                    if (value != null)
+                    JObject jObject = JObject.FromObject(property.Value);
+                    var flattened = jObject.Flatten();
+
+                    foreach (var kvPair in flattened)
                     {
                         logBodyProperties.Values.Add(new KeyValue()
                         {
-                            Key = property.Key,
-                            Value = value
+                            Key = kvPair.Key,
+                            Value = ConvertUtils.ToOpenTelemetryPrimitive(kvPair.Value)
                         });
                     }
+                    //
+                    // var value = ConvertUtils.ToOpenTelemetryAnyValue(property.Value);
+                    // if (value != null)
+                    // {
+                    //     logBodyProperties.Values.Add(new KeyValue()
+                    //     {
+                    //         Key = property.Key,
+                    //         Value = value
+                    //     });
+                    // }
                     break;
             }
         }
