@@ -70,8 +70,9 @@ internal static class OpenTelemetryUtils
     static ScopeLogs CreateEmptyScopeLogs()
     {
         var scopeLogs = new ScopeLogs();
-        scopeLogs.Scope = CreateInstrumentationScope();
-        scopeLogs.SchemaUrl = Convert.SCHEMA_URL;
+        // Not sure yet if this is needed so commenting out for now
+        // scopeLogs.SchemaUrl = Convert.SCHEMA_URL;
+        // scopeLogs.Scope = CreateInstrumentationScope();
 
         return scopeLogs;
     }
